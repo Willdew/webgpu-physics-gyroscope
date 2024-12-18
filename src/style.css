@@ -66,6 +66,7 @@ h1 {
 button {
   border-radius: 8px;
   border: 1px solid transparent;
+  z-index: 10; /* Ensures it stays above other elements */
   padding: 0.6em 1.2em;
   font-size: 1em;
   font-weight: 500;
@@ -92,5 +93,43 @@ button:focus-visible {
   }
   button {
     background-color: #f9f9f9;
+  }
+}
+
+#resetBase {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+}
+
+#view-mode {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+}
+
+/* Style for the quaternion display */
+#quaternion-display {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  color: #00ff00; /* Green text for visibility */
+  background: rgba(0, 0, 0, 0.5); /* Semi-transparent black background */
+  padding: 10px;
+  border-radius: 8px;
+  font-family: monospace;
+  font-size: 14px;
+  pointer-events: none; /* Allows clicks to pass through to underlying elements */
+  z-index: 10; /* Ensures it stays above other elements */
+  white-space: pre-line; /* Preserves line breaks */
+}
+
+/* Optional: Responsive adjustments */
+@media (max-width: 600px) {
+  #quaternion-display {
+    font-size: 12px;
+    padding: 8px;
+    top: 5px;
+    left: 5px;
   }
 }

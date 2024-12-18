@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.14.0",
+    "@types/w3c-generic-sensor": "^1.0.10",
     "@webgpu/types": "^0.1.51",
     "gitignore": "^0.7.0",
     "webgpu-utils": "^1.9.3",

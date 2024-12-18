@@ -10,7 +10,8 @@
     ],
     "skipLibCheck": true,
     "types": [
-      "@webgpu/types"
+      "@webgpu/types",
+      "@types/w3c-generic-sensor"
     ],
     /* Bundler mode */
     "moduleResolution": "bundler",

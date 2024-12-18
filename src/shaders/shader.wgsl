@@ -34,7 +34,7 @@ fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
     let diffuse = max(dot(N, L), 0.0);
 
     // Simple greyish material
-    let baseColor = vec3<f32>(N[0] * 0.8, N[1] * 0.8, 0.8);
+    let baseColor = vec3<f32>(0.8, 0.3, 0.9);
     let shadedColor = baseColor * (diffuse * lightData.color);
     return vec4<f32>(shadedColor, 1.0);
 }
