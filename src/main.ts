@@ -27,7 +27,6 @@ RAPIER.init().then(() => {
   let sphereBuffer: GPUBuffer;
   let groundUniformBuffer: GPUBuffer;
   let sphereUniformBuffer: GPUBuffer;
-  let lightUniformBuffer: GPUBuffer;
   let groundBindGroup: GPUBindGroup;
   let sphereBindGroup: GPUBindGroup;
   let depthStencil: GPUTexture;
@@ -37,6 +36,9 @@ RAPIER.init().then(() => {
   let world: RAPIER.World;
   let sphereRigidBody: RAPIER.RigidBody;
   let groundRigidBody: RAPIER.RigidBody;
+  let gravityY = -9.81;
+  let currentRestitution = 0.5;
+  let accelerometerFactor = 0.2;
 
   // Orientation sensor related
   let orientationSensor: RelativeOrientationSensor;
@@ -48,15 +50,42 @@ RAPIER.init().then(() => {
   let worldAccelerometer = [0, 0, 0];
   let baseOffset = 0;
   let resetBase = false;
+  let mouse = false;
+  let sphereCollider: any;
 
   // Scene
   let aspect = canvas.width / canvas.height;
   let sphereCoordinates = vec3.fromValues(0, 10, 0);
   let sphereRotation = quat.identity();
-  const [gX, gY, gZ] = [40, 0.01, 40];
+  const [gX, gY, gZ] = [40, 8, 40];
   const ground = webgpuHelper.createCuboidVertices(gX, gY, gZ);
   const sphere = webgpuHelper.createSphereVertices(32);
   let viewMode: viewType = "follow";
+  let eye: number[];
+
+  const gravitySlider = document.getElementById(
+    "gravity-slider",
+  ) as HTMLInputElement;
+  const bouncinessSlider = document.getElementById(
+    "bounciness-slider",
+  ) as HTMLInputElement;
+  const accelFactorSlider = document.getElementById(
+    "accel-factor-slider",
+  ) as HTMLInputElement;
+
+  const gravityValueDisplay = document.getElementById(
+    "gravity-value",
+  ) as HTMLSpanElement;
+  const bouncinessValueDisplay = document.getElementById(
+    "bounciness-value",
+  ) as HTMLSpanElement;
+  const accelFactorValueDisplay = document.getElementById(
+    "accel-factor-value",
+  ) as HTMLSpanElement;
+
+  gravityValueDisplay.textContent = gravitySlider.value;
+  bouncinessValueDisplay.textContent = bouncinessSlider.value;
+  accelFactorValueDisplay.textContent = accelFactorSlider.value;
 
   // ------------------ INITIALIZATION ------------------
   (async () => {
@@ -123,8 +152,7 @@ RAPIER.init().then(() => {
   }
 
   function initializeUniformBuffers() {
-    const uniformBufferSize = 64; // for a 4x4 matrix
-    const lightUniformBufferSize = 32; // 8 floats for light data
+    const uniformBufferSize = 64 * 3 + 16; // for a 4x4 matrix
 
     groundUniformBuffer = device.createBuffer({
       size: uniformBufferSize,
@@ -135,50 +163,17 @@ RAPIER.init().then(() => {
       size: uniformBufferSize,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
-
-    lightUniformBuffer = device.createBuffer({
-      size: lightUniformBufferSize,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-
-    // Initialize light data
-    let lightDirection = [0, 1, 1];
-    const len = Math.hypot(...lightDirection);
-    lightDirection = lightDirection.map((d) => d / len) as [
-      number,
-      number,
-      number,
-    ];
-    const lightColor = [0.3, 0.8, 1.0];
-
-    const lightDataArray = new Float32Array([
-      lightDirection[0],
-      lightDirection[1],
-      lightDirection[2],
-      0.0,
-      lightColor[0],
-      lightColor[1],
-      lightColor[2],
-      0.0,
-    ]);
-    device.queue.writeBuffer(lightUniformBuffer, 0, lightDataArray);
   }
 
   function initializeBindGroups() {
     groundBindGroup = device.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: groundUniformBuffer } },
-        { binding: 1, resource: { buffer: lightUniformBuffer } },
-      ],
+      entries: [{ binding: 0, resource: { buffer: groundUniformBuffer } }],
     });
 
     sphereBindGroup = device.createBindGroup({
       layout: pipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: sphereUniformBuffer } },
-        { binding: 1, resource: { buffer: lightUniformBuffer } },
-      ],
+      entries: [{ binding: 0, resource: { buffer: sphereUniformBuffer } }],
     });
   }
 
@@ -190,7 +185,11 @@ RAPIER.init().then(() => {
     const groundRigidBodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased();
     groundRigidBody = world.createRigidBody(groundRigidBodyDesc);
 
-    const groundColliderDesc = RAPIER.ColliderDesc.cuboid(gX / 2, gY, gZ / 2);
+    const groundColliderDesc = RAPIER.ColliderDesc.cuboid(
+      gX / 2,
+      gY / 2,
+      gZ / 2,
+    );
     world.createCollider(groundColliderDesc, groundRigidBody);
 
     // Sphere
@@ -205,7 +204,7 @@ RAPIER.init().then(() => {
     sphereRigidBody = world.createRigidBody(sphereRigidBodyDesc);
 
     const sphereColliderDesc = RAPIER.ColliderDesc.ball(1).setRestitution(0.5);
-    world.createCollider(sphereColliderDesc, sphereRigidBody);
+    sphereCollider = world.createCollider(sphereColliderDesc, sphereRigidBody);
     // Schedule Unlocking of Translations and Rotations After 500ms
     setTimeout(() => {
       // Unlock Translations on all axes
@@ -266,6 +265,7 @@ RAPIER.init().then(() => {
         quaternionDisplay.textContent =
           "AbsoluteOrientationSensor not supported by this browser.";
       }
+      mouse = true;
       return;
     }
 
@@ -308,7 +308,7 @@ RAPIER.init().then(() => {
           resolveTarget: context.getCurrentTexture().createView(),
           loadOp: "clear",
           storeOp: "store",
-          clearValue: { r: 0.3, g: 0.3, b: 0.3, a: 1.0 },
+          clearValue: { r: 0.0, g: 1, b: 1, a: 1.0 },
         },
       ],
       depthStencilAttachment: {
@@ -347,19 +347,37 @@ RAPIER.init().then(() => {
     const { perspective, view } = calculateView();
 
     // Ground MVP
-    const groundMVP = mat4.mul(
-      mat4.mul(perspective, view),
-      groundRotationMatrix,
-    );
-    device.queue.writeBuffer(groundUniformBuffer, 0, groundMVP as Float32Array);
+    device.queue.writeBuffer(
+      groundUniformBuffer,
+      0,
+      groundRotationMatrix as Float32Array,
+    ); // Model
+    device.queue.writeBuffer(groundUniformBuffer, 64, view as Float32Array); // View
+    device.queue.writeBuffer(
+      groundUniformBuffer,
+      128,
+      perspective as Float32Array,
+    ); // Projection
+    device.queue.writeBuffer(groundUniformBuffer, 192, new Float32Array(eye)); // Projection
 
     // Sphere MVP
-    const sphereModelMatrix = mat4.translation(sphereCoordinates);
-    const sphereMVP = mat4.mul(
-      mat4.mul(mat4.mul(perspective, view), sphereModelMatrix),
+    const sphereModelMatrix = mat4.mul(
+      mat4.translation(sphereCoordinates),
       mat4.fromQuat(sphereRotation),
     );
-    device.queue.writeBuffer(sphereUniformBuffer, 0, sphereMVP as Float32Array);
+
+    device.queue.writeBuffer(
+      sphereUniformBuffer,
+      0,
+      sphereModelMatrix as Float32Array,
+    ); // Model
+    device.queue.writeBuffer(sphereUniformBuffer, 64, view as Float32Array); // View
+    device.queue.writeBuffer(
+      sphereUniformBuffer,
+      128,
+      perspective as Float32Array,
+    ); // Projection
+    device.queue.writeBuffer(sphereUniformBuffer, 192, new Float32Array(eye)); // Projection
   }
 
   function calculateView() {
@@ -367,7 +385,6 @@ RAPIER.init().then(() => {
     const near = 0.1;
     const far = 1000;
     const perspective = mat4.perspective(fov, aspect, near, far);
-    let eye: number[];
     let target: any;
     // const eye = [sphereCoordinates[0], 10, sphereCoordinates[2] + 15];
     switch (viewMode) {
@@ -402,7 +419,6 @@ RAPIER.init().then(() => {
   }
 
   function updatePhysics() {
-    // Update physics world from user input
     groundRigidBody.setNextKinematicRotation({
       x: groundRotationQuat[0],
       y: groundRotationQuat[1],
@@ -410,13 +426,13 @@ RAPIER.init().then(() => {
       w: groundRotationQuat[3],
     });
 
+    // Apply accelerometer factor (previously hard-coded to 0.2)
     groundRigidBody.setNextKinematicTranslation({
-      x: worldAccelerometer[0] * 0.2,
-      y: worldAccelerometer[2] * 0.2,
-      z: worldAccelerometer[1] * 0.2,
+      x: worldAccelerometer[0] * accelerometerFactor,
+      y: worldAccelerometer[2] * accelerometerFactor,
+      z: worldAccelerometer[1] * accelerometerFactor,
     });
 
-    // Reset location if the kraken attacks
     if (!checkSphereBounds()) {
       sphereRigidBody.setTranslation({ x: 0, y: 10, z: 0 }, true);
     }
@@ -426,7 +442,6 @@ RAPIER.init().then(() => {
     const position = sphereRigidBody.translation();
     const rotation = sphereRigidBody.rotation();
 
-    // Sync simulation results
     sphereCoordinates = vec3.fromValues(position.x, position.y, position.z);
     sphereRotation = quat.fromValues(
       rotation.x,
@@ -518,6 +533,7 @@ RAPIER.init().then(() => {
   }
 
   function handleSensorError(event: any) {
+    mouse = true;
     if (event.error.name === "NotAllowedError") {
       console.error("Sensor access was denied by the user.");
     } else if (event.error.name === "NotReadableError") {
@@ -634,5 +650,60 @@ RAPIER.init().then(() => {
       default:
         break;
     }
+  });
+
+  let mouseCenterX = 0;
+  let mouseCenterY = 0;
+
+  function updateMouseCenter() {
+    mouseCenterX = canvas.width / 2;
+    mouseCenterY = canvas.height / 2;
+  }
+
+  updateMouseCenter();
+
+  const rotationScale = 0.004;
+
+  canvas.addEventListener("mousemove", (event) => {
+    if (!mouse) return; // Only run this if mouse mode is active
+
+    const offsetX = event.clientX - mouseCenterX;
+    const offsetY = event.clientY - mouseCenterY;
+
+    const angleX = offsetY * rotationScale;
+    const angleZ = offsetX * rotationScale;
+
+    const mouseQuat = quat.fromEuler(angleX, 0, -angleZ, "xyz");
+
+    groundRotationQuat = mouseQuat;
+    groundRotationMatrix = mat4.fromQuat(mouseQuat);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.code === "Space") {
+      event.preventDefault(); // Prevent default spacebar scrolling behavior
+      mouse = !mouse;
+    }
+  });
+
+  gravitySlider.addEventListener("input", () => {
+    gravityY = parseFloat(gravitySlider.value);
+    gravityValueDisplay.textContent = gravitySlider.value;
+    // Update the physics world gravity directly
+    world.gravity = { x: 0, y: gravityY, z: 0 };
+  });
+
+  bouncinessSlider.addEventListener("input", () => {
+    currentRestitution = parseFloat(bouncinessSlider.value);
+    bouncinessValueDisplay.textContent = bouncinessSlider.value;
+    // Update sphere's restitution if collider is accessible
+    if (sphereCollider) {
+      sphereCollider.setRestitution(currentRestitution);
+    }
+  });
+
+  accelFactorSlider.addEventListener("input", () => {
+    accelerometerFactor = parseFloat(accelFactorSlider.value);
+    accelFactorValueDisplay.textContent = accelFactorSlider.value;
   });
 });

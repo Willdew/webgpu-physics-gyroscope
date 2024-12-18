@@ -95,11 +95,10 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
-
 #resetBase {
   position: absolute;
-  bottom: 10px;
-  left: 10px;
+  bottom: 55px; /* Adjust as needed */
+  right: 10px;
 }
 
 #view-mode {
@@ -122,6 +121,21 @@ button:focus-visible {
   pointer-events: none; /* Allows clicks to pass through to underlying elements */
   z-index: 10; /* Ensures it stays above other elements */
   white-space: pre-line; /* Preserves line breaks */
+}
+#controls {
+  position: absolute;
+  padding: 5px;
+  border-radius: 5px;
+  font-family: sans-serif;
+  bottom: 10px;
+  left: 10px;
+}
+#controls label {
+  display: block;
+  margin: 4px 0 4px;
+}
+#controls input[type="range"] {
+  width: 100;
 }
 
 /* Optional: Responsive adjustments */

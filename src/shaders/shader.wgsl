@@ -1,3 +1,10 @@
+struct Matrices {
+    model: mat4x4<f32>,
+    view: mat4x4<f32>,
+    projection: mat4x4<f32>,
+    cameraPosition: vec3<f32>
+};
+
 struct VertexIn {
     @location(0) position: vec4<f32>,
     @location(1) normal: vec4<f32>,
@@ -5,36 +12,47 @@ struct VertexIn {
 
 struct VertexOut {
     @builtin(position) position: vec4<f32>,
-    @location(0) normal: vec3<f32>
+    @location(0) vNormal: vec4<f32>,
+    @location(1) vPos: vec4<f32>,
 };
 
-@group(0) @binding(0) var<uniform> mvpMatrix : mat4x4<f32>;
-
-struct LightData {
-    direction: vec3<f32>,
-    _pad1: f32,
-    color: vec3<f32>,
-    _pad2: f32,
-};
-
-@group(0) @binding(1) var<uniform> lightData : LightData;
+@group(0) @binding(0) var<uniform> matrices : Matrices;
 
 @vertex
 fn vs_main(input: VertexIn) -> VertexOut {
     var output: VertexOut;
-    output.position = mvpMatrix * input.position;
-    output.normal = normalize(input.normal.xyz);
+    let mvMatrix = matrices.view * matrices.model;
+    output.position = matrices.projection * mvMatrix * input.position;
+    output.vNormal = matrices.model * input.normal;
+    output.vPos = matrices.model * input.position;
     return output;
 }
 
 @fragment
-fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
-    let N = normalize(input.normal);
-    let L = normalize(lightData.direction);
-    let diffuse = max(dot(N, L), 0.0);
+fn fs_main(fragData: VertexOut) -> @location(0) vec4<f32> {
+    let specularStrength = 0.5;
+    let specularShininess = 19.0;
+    let lightPosition = vec3(5.0, 20.0, 2.0);
+    let diffuseLightStrength = 0.8;
+    let ambientLightStrength = 0.8;
+    let ambientLightColor = vec4(0.0, 0.7, 0.7, 1.0);
 
-    // Simple greyish material
-    let baseColor = vec3<f32>(0.8, 0.3, 0.9);
-    let shadedColor = baseColor * (diffuse * lightData.color);
-    return vec4<f32>(shadedColor, 1.0);
+  //Ambient
+    let ambientFinal = ambientLightColor * ambientLightStrength;
+
+  //Diffuse
+    let vNormal = normalize(fragData.vNormal.xyz);
+    let vPosition = fragData.vPos.xyz;
+    let vCameraPosition = matrices.cameraPosition;
+    let lightDir = normalize(lightPosition - vPosition);
+    let lightMagnitude = dot(vNormal, lightDir);
+    let diffuseLightFinal: f32 = diffuseLightStrength * max(lightMagnitude, 0.0);
+
+  //Specular
+    let viewDir = normalize(vCameraPosition - vPosition);
+    let reflectDir = reflect(-lightDir, vNormal);
+    let spec = pow(max(dot(viewDir, reflectDir), 0.0), specularShininess);
+    let specularFinal = specularStrength * spec;
+    let lightFinal = specularFinal + diffuseLightFinal;
+    return vec4(0.9, 0.5, 0.5, 1.0) * lightFinal + ambientFinal;
 }
